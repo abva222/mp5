@@ -620,89 +620,103 @@ public class ProjectTest {
         j.jenkins.setSecurityRealm(realm); 
         User user = realm.createAccount("John Smith", "password");
         SecurityContextHolder.getContext().setAuthentication(user.impersonate()); 
-        try{
-            project.doDisable();
-            fail("User should not have permission to build project");
-        }
-        catch(Exception e){
-            if(!(e.getClass().isAssignableFrom(AccessDeniedException2.class))){
-               fail("AccessDeniedException should be thrown.");
-            }
-        } 
-        auth.add(Job.READ, user.getId());
-        auth.add(Job.CONFIGURE, user.getId());
-        auth.add(Jenkins.READ, user.getId());
-        List<HtmlForm> forms = j.createWebClient().login(user.getId(), "password").goTo(project.getUrl()).getForms();
-        for(HtmlForm form:forms){
-            if("disable".equals(form.getAttribute("action"))){
-                j.submit(form);
-            }
-        }
+        enableDisable(project, auth, user, false);
        assertTrue("Project should be disabled.", project.isDisabled());
     }
-    
+
+    public void enableDisable(FreeStyleProject project, GlobalMatrixAuthorizationStrategy auth, User user, boolean isEnabled) throws Exception
+    {
+        if(!isEnabled)
+        {
+            try{
+                project.doDisable();
+                fail("User should not have permission to build project");
+            }
+            catch(Exception e){
+                if(!(e.getClass().isAssignableFrom(AccessDeniedException2.class))){
+                    fail("AccessDeniedException should be thrown.");
+                }
+            }
+            auth.add(Job.READ, user.getId());
+            auth.add(Job.CONFIGURE, user.getId());
+            auth.add(Jenkins.READ, user.getId());
+            List<HtmlForm> forms = j.createWebClient().login(user.getId(), "password").goTo(project.getUrl()).getForms();
+            for(HtmlForm form:forms){
+                if("disable".equals(form.getAttribute("action"))){
+                    j.submit(form);
+                }
+            }
+        }
+        else
+        {
+            try{
+                project.doEnable();
+                fail("User should not have permission to build project");
+            }
+            catch(Exception e){
+                if(!(e.getClass().isAssignableFrom(AccessDeniedException2.class))){
+                    fail("AccessDeniedException should be thrown.");
+                }
+            }
+            auth.add(Job.READ, user.getId());
+            auth.add(Job.CONFIGURE, user.getId());
+            auth.add(Jenkins.READ, user.getId());
+            List<HtmlForm> forms = j.createWebClient().login(user.getId(), "password").goTo(project.getUrl()).getForms();
+            for(HtmlForm form:forms){
+                if("enable".equals(form.getAttribute("action"))){
+                    j.submit(form);
+                }
+            }
+
+        }
+
+    }
+
     @Test
     public void testDoEnable() throws Exception{
         FreeStyleProject project = j.createFreeStyleProject("project");
-        GlobalMatrixAuthorizationStrategy auth = new GlobalMatrixAuthorizationStrategy();   
+        GlobalMatrixAuthorizationStrategy auth = new GlobalMatrixAuthorizationStrategy();
         j.jenkins.setAuthorizationStrategy(auth);
         j.jenkins.setCrumbIssuer(null);
         HudsonPrivateSecurityRealm realm = new HudsonPrivateSecurityRealm(false);
         j.jenkins.setSecurityRealm(realm);
         User user = realm.createAccount("John Smith", "password");
-        SecurityContextHolder.getContext().setAuthentication(user.impersonate()); 
+        SecurityContextHolder.getContext().setAuthentication(user.impersonate());
         project.disable();
-        try{
-            project.doEnable();
-            fail("User should not have permission to build project");
-        }
-        catch(Exception e){
-            if(!(e.getClass().isAssignableFrom(AccessDeniedException2.class))){
-               fail("AccessDeniedException should be thrown.");
-            }
-        } 
-        auth.add(Job.READ, user.getId());
-        auth.add(Job.CONFIGURE, user.getId());
-        auth.add(Jenkins.READ, user.getId());
-        List<HtmlForm> forms = j.createWebClient().login(user.getId(), "password").goTo(project.getUrl()).getForms();
-        for(HtmlForm form:forms){
-            if("enable".equals(form.getAttribute("action"))){
-                j.submit(form);
-            }
-        }
-       assertFalse("Project should be enabled.", project.isDisabled());
+        enableDisable(project, auth, user, true);
+        assertFalse("Project should be enabled.", project.isDisabled());
     }
-    
+
     /**
      * Job is un-restricted (no nabel), this is submitted to queue, which spawns an on demand slave
-     * @throws Exception 
+     * @throws Exception
      */
     @Test
     public void testJobSubmittedShouldSpawnCloud() throws Exception {
         /**
          * Setup a project with an SCM. Jenkins should have no executors in itself. 
          */
-        FreeStyleProject proj = j.createFreeStyleProject("JENKINS-21394-spawn");        
+        FreeStyleProject proj = j.createFreeStyleProject("JENKINS-21394-spawn");
         RequiresWorkspaceSCM requiresWorkspaceScm = new RequiresWorkspaceSCM(true);
-        proj.setScm(requiresWorkspaceScm);        
+        proj.setScm(requiresWorkspaceScm);
         j.jenkins.setNumExecutors(0);        
         /*
          * We have a cloud
          */
         DummyCloudImpl2 c2 = new DummyCloudImpl2(j, 0);
-        c2.label = new LabelAtom("test-cloud-label");        
+        c2.label = new LabelAtom("test-cloud-label");
         j.jenkins.clouds.add(c2);
-        
+
         SCMTrigger t = new SCMTrigger("@daily", true);
         t.start(proj, true);
         proj.addTrigger(t);
         t.new Runner().run();
-        
+
         Thread.sleep(1000);
         //Assert that the job IS submitted to Queue.
-        assertEquals(1, j.jenkins.getQueue().getItems().length);        
+        assertEquals(1, j.jenkins.getQueue().getItems().length);
     }
-    
+
     /**
      * Job is restricted, but label can not be provided by any cloud, only normal slaves. Then job will not submit, because no slave is available.
      * @throws Exception
@@ -712,69 +726,69 @@ public class ProjectTest {
         assertTrue(j.jenkins.clouds.isEmpty());
         //Create slave. (Online)
         Slave s1 = j.createOnlineSlave();
-        
+
         //Create a project, and bind the job to the created slave
         FreeStyleProject proj = j.createFreeStyleProject("JENKINS-21394-noqueue");
         proj.setAssignedLabel(s1.getSelfLabel());
-                        
+
         //Add an SCM to the project. We require a workspace for the poll
         RequiresWorkspaceSCM requiresWorkspaceScm = new RequiresWorkspaceSCM(true);
         proj.setScm(requiresWorkspaceScm);
- 
-        j.buildAndAssertSuccess(proj);        
+
+        j.buildAndAssertSuccess(proj);
 
         //Now create another slave. And restrict the job to that slave. The slave is offline, leaving the job with no assignable nodes.
         //We tell our mock SCM to return that it has got changes. But since there are no slaves, we get the desired result. 
         Slave s2 = j.createSlave();
         proj.setAssignedLabel(s2.getSelfLabel());
         requiresWorkspaceScm.hasChange = true;
-        
+
         //Poll (We now should have NO online slaves, this should now return NO_CHANGES.
         PollingResult pr = proj.poll(j.createTaskListener());
         assertFalse(pr.hasChanges());
-        
+
         SCMTrigger t = new SCMTrigger("@daily", true);
         t.start(proj, true);
         proj.addTrigger(t);
-        
+
         t.new Runner().run();
-        
+
         /**
          * Assert that the log contains the correct message.
          */
         HtmlPage log = j.createWebClient().getPage(proj, "scmPollLog");
         String logastext = log.asText();
         assertTrue(logastext.contains("(" + AbstractProject.WorkspaceOfflineReason.all_suitable_nodes_are_offline.name() + ")"));
-        
+
     }
-    
+
     /**
      * Job is restricted. Label is on slave that can be started in cloud. Job is submitted to queue, which spawns an on demand slave.
-     * @throws Exception 
+     * @throws Exception
      */
     @Test
-    public void testRestrictedLabelOnSlaveYesQueue() throws Exception {        
+    public void testRestrictedLabelOnSlaveYesQueue() throws Exception {
         FreeStyleProject proj = j.createFreeStyleProject("JENKINS-21394-yesqueue");
         RequiresWorkspaceSCM requiresWorkspaceScm = new RequiresWorkspaceSCM(true);
-        proj.setScm(requiresWorkspaceScm);        
+        proj.setScm(requiresWorkspaceScm);
         j.jenkins.setNumExecutors(0);
         
         /*
          * We have a cloud
          */
         DummyCloudImpl2 c2 = new DummyCloudImpl2(j, 0);
-        c2.label = new LabelAtom("test-cloud-label");        
+        c2.label = new LabelAtom("test-cloud-label");
         j.jenkins.clouds.add(c2);
         proj.setAssignedLabel(c2.label);
-        
+
         SCMTrigger t = new SCMTrigger("@daily", true);
         t.start(proj, true);
         proj.addTrigger(t);
         t.new Runner().run();
-        
+
         Thread.sleep(1000);
         //The job should be in queue
-        assertEquals(1, j.jenkins.getQueue().getItems().length);    
+        assertEquals(1, j.jenkins.getQueue().getItems().length);
     }
 
     @Issue("JENKINS-22750")
@@ -782,11 +796,11 @@ public class ProjectTest {
     public void testMasterJobPutInQueue() throws Exception {
         FreeStyleProject proj = j.createFreeStyleProject("JENKINS-21394-yes-master-queue");
         RequiresWorkspaceSCM requiresWorkspaceScm = new RequiresWorkspaceSCM(true);
-        proj.setAssignedLabel(null);        
-        proj.setScm(requiresWorkspaceScm);        
-        j.jenkins.setNumExecutors(1);    
+        proj.setAssignedLabel(null);
         proj.setScm(requiresWorkspaceScm);
-        
+        j.jenkins.setNumExecutors(1);
+        proj.setScm(requiresWorkspaceScm);
+
         //First build is not important
         j.buildAndAssertSuccess(proj);
 
@@ -800,9 +814,9 @@ public class ProjectTest {
     }
 
     public static class TransientAction extends InvisibleAction{
-        
+
     }
-    
+
     @TestExtension
     public static class TransientActionFactoryImpl extends TransientProjectActionFactory{
 
@@ -813,25 +827,25 @@ public class ProjectTest {
                 actions.add(new TransientAction());
             return actions;
         }
-        
+
     }
-    
-    @TestExtension 
+
+    @TestExtension
     public static class RequiresWorkspaceSCM extends NullSCM {
-        
+
         public boolean hasChange = false;
-        
+
         public RequiresWorkspaceSCM() { }
-         
+
         public RequiresWorkspaceSCM(boolean hasChange) {
             this.hasChange = hasChange;
         }
-        
+
         @Override
         public boolean pollChanges(AbstractProject<?, ?> project, Launcher launcher, FilePath workspace, TaskListener listener) throws IOException, InterruptedException {
             return hasChange;
         }
-                       
+
         @Override
         public boolean requiresWorkspaceForPolling(){
             return true;
@@ -843,16 +857,16 @@ public class ProjectTest {
                 }
             };
         }
-        
+
         @Override
-        protected PollingResult compareRemoteRevisionWith(AbstractProject project, Launcher launcher, FilePath workspace, TaskListener listener, SCMRevisionState baseline) throws IOException, InterruptedException {            
+        protected PollingResult compareRemoteRevisionWith(AbstractProject project, Launcher launcher, FilePath workspace, TaskListener listener, SCMRevisionState baseline) throws IOException, InterruptedException {
             if(!hasChange) {
                 return PollingResult.NO_CHANGES;
             }
             return PollingResult.SIGNIFICANT;
         }
     }
-    
+
     @TestExtension
     public static class AlwaysChangedSCM extends NullSCM {
 
@@ -860,7 +874,7 @@ public class ProjectTest {
         public boolean pollChanges(AbstractProject<?, ?> project, Launcher launcher, FilePath workspace, TaskListener listener) throws IOException, InterruptedException {
             return true;
         }
-        
+
         @Override
         public boolean requiresWorkspaceForPolling(){
             return false;
@@ -870,9 +884,9 @@ public class ProjectTest {
         protected PollingResult compareRemoteRevisionWith(AbstractProject project, Launcher launcher, FilePath workspace, TaskListener listener, SCMRevisionState baseline) throws IOException, InterruptedException {
             return PollingResult.SIGNIFICANT;
         }
-        
+
     }
-    
+
     @TestExtension
     public static class WorkspaceBrowserImpl extends WorkspaceBrowser{
 
@@ -882,18 +896,18 @@ public class ProjectTest {
                 return new FilePath(new File("some_file_path"));
             return null;
         }
-        
+
     }
-    
+
 
     public static class SCMCheckoutStrategyImpl extends DefaultSCMCheckoutStrategyImpl implements Serializable{
-        
+
         public SCMCheckoutStrategyImpl(){
-            
+
         }
 
     }
-    
+
     public static class JobPropertyImp extends JobProperty{
 
         @Override
@@ -902,10 +916,10 @@ public class ProjectTest {
             list.add(new SubTaskImpl());
             return list;
         }
-        
-        
+
+
     }
-    
+
     @TestExtension
     public static class SubTaskContributorImpl extends SubTaskContributor{
 
@@ -918,13 +932,13 @@ public class ProjectTest {
             return list;
         }
     }
-    
+
     public static class SubTaskImpl2 extends SubTaskImpl{
-        
+
     }
-    
+
     public static class SubTaskImpl extends AbstractSubTask{
-        
+
         public String projectName;
 
         @Override
@@ -942,13 +956,13 @@ public class ProjectTest {
             return "some task";
         }
 
-        
+
     }
-    
+
     public class ActionImpl extends InvisibleAction{
-        
+
     }
-    
+
     @TestExtension
     public static class DummyCloudImpl2 extends Cloud {
         private final transient JenkinsRule caller;
@@ -969,8 +983,8 @@ public class ProjectTest {
          * Only reacts to provisioning for this label.
          */
         public Label label;
-        
-        public DummyCloudImpl2() { 
+
+        public DummyCloudImpl2() {
             super("test");
             this.delay = 0;
             this.caller = null;
@@ -1000,7 +1014,7 @@ public class ProjectTest {
         @Override
         public boolean canProvision(Label label) {
             //This cloud can ALWAYS provision 
-           return true;
+            return true;
             /* return label==this.label; */
         }
 
